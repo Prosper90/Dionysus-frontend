@@ -8,3 +8,5 @@
 .next
 
 node_modules/
+
+https://dionysus-bot-f9973fd884e7.herokuapp.com/api/auth/login
