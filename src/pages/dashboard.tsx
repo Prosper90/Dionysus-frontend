@@ -53,6 +53,10 @@ interface CouponData {
   isUsed: boolean;
   expiresAt: string;
   description: string;
+  isLifetime?: boolean;
+  lifetimeFeatures?: string[];
+  maxRedemptions?: number;
+  currentRedemptions?: number;
 }
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -62,13 +66,21 @@ export default function Dashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [groups, setGroups] = useState<GroupData[]>([]);
   const [coupons, setCoupons] = useState<CouponData[]>([]);
+  const [lifetimeCoupons, setLifetimeCoupons] = useState<CouponData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCouponModal, setShowCouponModal] = useState(false);
+  const [showLifetimeCouponModal, setShowLifetimeCouponModal] = useState(false);
   const [newCoupon, setNewCoupon] = useState({
     code: "",
     amount: "",
     expiresAt: "",
     description: "",
+  });
+  const [newLifetimeCoupon, setNewLifetimeCoupon] = useState({
+    description: "",
+    expiresAt: "",
+    maxRedemptions: "",
+    customCode: "",
   });
   const router = useRouter();
 
@@ -87,10 +99,11 @@ export default function Dashboard() {
       const token = localStorage.getItem("dashboard-token");
       const headers = { Authorization: `Bearer ${token}` };
 
-      const [analyticsRes, groupsRes, couponsRes] = await Promise.all([
+      const [analyticsRes, groupsRes, couponsRes, lifetimeCouponsRes] = await Promise.all([
         fetch(`${ApiHead}/api/analytics/owner`, { headers }),
         fetch(`${ApiHead}/api/groups/active`, { headers }),
         fetch(`${ApiHead}/api/coupons`, { headers }),
+        fetch(`${ApiHead}/api/lifetime-coupons`, { headers }),
       ]);
 
       if (analyticsRes.ok) {
@@ -101,6 +114,10 @@ export default function Dashboard() {
       }
       if (couponsRes.ok) {
         setCoupons(await couponsRes.json());
+      }
+      if (lifetimeCouponsRes.ok) {
+        const lifetimeData = await lifetimeCouponsRes.json();
+        setLifetimeCoupons(lifetimeData.coupons || []);
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -137,6 +154,33 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error("Failed to generate coupon:", error);
+    }
+  };
+
+  const generateLifetimeCoupon = async () => {
+    try {
+      const token = localStorage.getItem("dashboard-token");
+      const response = await fetch(`${ApiHead}/api/lifetime-coupons/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          description: newLifetimeCoupon.description || "Lifetime Premium Access",
+          expiresAt: newLifetimeCoupon.expiresAt || undefined,
+          maxRedemptions: newLifetimeCoupon.maxRedemptions ? parseInt(newLifetimeCoupon.maxRedemptions) : undefined,
+          customCode: newLifetimeCoupon.customCode || undefined,
+        }),
+      });
+
+      if (response.ok) {
+        setShowLifetimeCouponModal(false);
+        setNewLifetimeCoupon({ description: "", expiresAt: "", maxRedemptions: "", customCode: "" });
+        fetchData();
+      }
+    } catch (error) {
+      console.error("Failed to generate lifetime coupon:", error);
     }
   };
 
@@ -236,6 +280,7 @@ export default function Dashboard() {
               { id: "overview", name: "Overview", icon: ChartBarIcon },
               { id: "groups", name: "Active Groups", icon: UsersIcon },
               { id: "coupons", name: "Coupons", icon: CurrencyDollarIcon },
+              { id: "lifetime-coupons", name: "Lifetime Coupons", icon: CalendarDaysIcon },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -568,6 +613,91 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* Lifetime Coupons Tab */}
+        {activeTab === "lifetime-coupons" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Lifetime Coupons Management</h2>
+              <button
+                onClick={() => setShowLifetimeCouponModal(true)}
+                className="inline-flex items-center px-6 py-3 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 transition-all duration-200"
+              >
+                <CalendarDaysIcon className="h-4 w-4 mr-2" />
+                Create Lifetime Coupon
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="divide-y divide-gray-200">
+                {lifetimeCoupons.length === 0 ? (
+                  <div className="px-6 py-12 text-center">
+                    <CalendarDaysIcon className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">No lifetime coupons</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Create your first lifetime coupon to get started.
+                    </p>
+                  </div>
+                ) : (
+                  lifetimeCoupons.map((coupon) => (
+                    <div key={coupon._id} className="px-6 py-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <p className="text-lg font-bold text-gray-900 font-mono bg-gradient-to-r from-purple-100 to-pink-100 px-3 py-1 rounded-lg border-2 border-purple-200">
+                              {coupon.code}
+                            </p>
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                              ♾️ Lifetime
+                            </span>
+                            <span
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                                new Date(coupon.expiresAt) > new Date()
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {new Date(coupon.expiresAt) > new Date() ? "Active" : "Expired"}
+                            </span>
+                          </div>
+                          <div className="mt-2">
+                            <p className="text-sm text-gray-600">{coupon.description}</p>
+                            <div className="flex items-center space-x-4 mt-2">
+                              <p className="text-xs text-gray-500">
+                                Expires: {new Date(coupon.expiresAt).toLocaleDateString()}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Redemptions: {coupon.currentRedemptions || 0}
+                                {coupon.maxRedemptions ? `/${coupon.maxRedemptions}` : '/∞'}
+                              </p>
+                            </div>
+                            {coupon.lifetimeFeatures && coupon.lifetimeFeatures.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-xs font-medium text-gray-700">Features:</p>
+                                <p className="text-xs text-gray-500">
+                                  {coupon.lifetimeFeatures.slice(0, 3).join(', ')}
+                                  {coupon.lifetimeFeatures.length > 3 && '...'}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          <div className="text-right">
+                            <p className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600">
+                              LIFETIME
+                            </p>
+                            <p className="text-sm text-gray-500">No expiry</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Coupon Generation Modal */}
@@ -641,6 +771,99 @@ export default function Dashboard() {
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 Generate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lifetime Coupon Generation Modal */}
+      {showLifetimeCouponModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600">
+                Create Lifetime Coupon
+              </h3>
+              <button
+                onClick={() => setShowLifetimeCouponModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Custom Code (Optional)</label>
+                <input
+                  type="text"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                  value={newLifetimeCoupon.customCode}
+                  onChange={(e) => setNewLifetimeCoupon({ ...newLifetimeCoupon, customCode: e.target.value })}
+                  placeholder="LIFETIME2024 (leave empty for auto-generation)"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <input
+                  type="text"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                  value={newLifetimeCoupon.description}
+                  onChange={(e) => setNewLifetimeCoupon({ ...newLifetimeCoupon, description: e.target.value })}
+                  placeholder="Lifetime Premium Access"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Max Redemptions (Optional)</label>
+                <input
+                  type="number"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                  value={newLifetimeCoupon.maxRedemptions}
+                  onChange={(e) => setNewLifetimeCoupon({ ...newLifetimeCoupon, maxRedemptions: e.target.value })}
+                  placeholder="Leave empty for unlimited"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Expires At (Optional)</label>
+                <input
+                  type="datetime-local"
+                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+                  value={newLifetimeCoupon.expiresAt}
+                  onChange={(e) => setNewLifetimeCoupon({ ...newLifetimeCoupon, expiresAt: e.target.value })}
+                />
+                <p className="text-xs text-gray-500 mt-1">Leave empty for 1 year from now</p>
+              </div>
+
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <h4 className="text-sm font-medium text-purple-900 mb-2">✨ Lifetime Features Included:</h4>
+                <ul className="text-xs text-purple-800 space-y-1">
+                  <li>♾️ Lifetime access to all features</li>
+                  <li>🎰 Unlimited stake raffles</li>
+                  <li>🎭 Meme battles with voting</li>
+                  <li>🏆 Advanced leaderboards</li>
+                  <li>📊 Detailed analytics</li>
+                  <li>⚙️ Custom group settings</li>
+                  <li>🔮 Early access to new features</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="flex space-x-4 mt-6">
+              <button
+                onClick={() => setShowLifetimeCouponModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={generateLifetimeCoupon}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700"
+              >
+                Create Lifetime Coupon
               </button>
             </div>
           </div>
